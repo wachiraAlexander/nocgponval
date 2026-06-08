@@ -1,0 +1,24 @@
+﻿# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Excel uploads (large data files)
+uploads/*.xlsx
+
+# Log files
+*.log
+
+# Backup files
+*.backup.*
+
+# Test files
+test_*.py
+*_test.py
+
+# Zip files
+*.zip
+
+# Other
+.env
+.venv/

@@ -1,0 +1,1943 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPON Assistant - JTL NOC Monitoring</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.5/socket.io.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+      // Early theme apply to prevent flash
+      (function() {
+        var t = localStorage.getItem('theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', t);
+      })();
+    </script>
+    <style>
+        :root {
+            --bg-base:        #070d1a;
+            --bg-surface:     #0d1629;
+            --bg-card:        #111e36;
+            --bg-elevated:    #162440;
+            --border-subtle:  rgba(255,255,255,0.06);
+            --border-strong:  rgba(255,255,255,0.12);
+
+            --accent-cyan:    #00d4ff;
+            --accent-cyan-dim:#0099bb;
+            --accent-green:   #00e5a0;
+            --accent-amber:   #ffb020;
+            --accent-red:     #ff4d6a;
+            --accent-blue:    #4a9eff;
+
+            --text-primary:   #e8f0fe;
+            --text-secondary: #8ba3c7;
+            --text-muted:     #4a6080;
+
+            --glow-cyan:      0 0 20px rgba(0,212,255,0.25);
+            --glow-green:     0 0 20px rgba(0,229,160,0.2);
+        }
+
+        /* Day / Night (light/dark) theme */
+        [data-theme="light"] {
+            --bg-base:        #f8fafc;
+            --bg-surface:     #ffffff;
+            --bg-card:        #ffffff;
+            --bg-elevated:    #f1f5f9;
+            --border-subtle:  #e2e8f0;
+            --border-strong:  #cbd5e1;
+
+            --text-primary:   #0f172a;
+            --text-secondary: #475569;
+            --text-muted:     #64748b;
+
+            --glow-cyan:      0 0 8px rgba(0,150,200,0.12);
+            --glow-green:     0 0 8px rgba(0,160,110,0.12);
+        }
+
+        [data-theme="light"] body {
+            background-color: var(--bg-base);
+            background-image: linear-gradient(180deg, #f8fafc 0%, #e0e7ff 100%);
+            color: var(--text-primary);
+        }
+
+        [data-theme="light"] .log-content p:hover {
+            background: rgba(15,23,42,0.04);
+        }
+
+        [data-theme="light"] .btn-ctrl-pause {
+            background: rgba(255,176,32,0.12);
+            border-color: rgba(255,176,32,0.25);
+        }
+
+        [data-theme="light"] .log-panel,
+        [data-theme="light"] .form-panel,
+        [data-theme="light"] .progress-panel,
+        [data-theme="light"] .noc-header {
+            box-shadow: 0 1px 2px rgba(15,23,42,0.04);
+        }
+
+        *, *::before, *::after { box-sizing: border-box; }
+
+        body {
+            background-color: var(--bg-base);
+            background-image:
+                radial-gradient(ellipse 80% 50% at 50% -10%, rgba(0,100,180,0.18) 0%, transparent 70%),
+                linear-gradient(180deg, var(--bg-base) 0%, #0a1220 100%);
+            min-height: 100vh;
+            font-family: 'IBM Plex Sans', sans-serif;
+            color: var(--text-primary);
+        }
+
+        /* ── Layout ── */
+        .app-wrapper {
+            max-width: 1140px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem 3rem;
+        }
+
+        /* ── Header ── */
+        .noc-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1.75rem 2.5rem;
+            background: var(--bg-surface);
+            border: 1px solid var(--border-strong);
+            border-radius: 16px 16px 0 0;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .noc-header::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(135deg, rgba(0,212,255,0.04) 0%, transparent 60%);
+            pointer-events: none;
+        }
+
+        .noc-header-left {
+            display: flex;
+            align-items: center;
+            gap: 1.25rem;
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+        }
+
+        .header-icon-wrap {
+            width: 52px;
+            height: 52px;
+            background: linear-gradient(135deg, rgba(0,212,255,0.15), rgba(0,212,255,0.05));
+            border: 1px solid rgba(0,212,255,0.3);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.4rem;
+            color: var(--accent-cyan);
+            box-shadow: var(--glow-cyan);
+        }
+
+        .header-title {
+            font-size: 1.5rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            color: var(--text-primary);
+            margin: 0;
+            line-height: 1;
+        }
+
+        .header-subtitle {
+            font-size: 0.78rem;
+            color: var(--text-secondary);
+            margin: 0.3rem 0 0 0;
+            font-weight: 400;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .header-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.78rem;
+            color: var(--accent-green);
+            font-family: 'IBM Plex Mono', monospace;
+            font-weight: 500;
+            letter-spacing: 0.06em;
+        }
+
+        .status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--accent-green);
+            box-shadow: 0 0 8px var(--accent-green);
+            animation: blink 2.4s ease-in-out infinite;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+
+        /* ── Nav Tabs ── */
+        .noc-tabs {
+            background: var(--bg-surface);
+            border-left: 1px solid var(--border-strong);
+            border-right: 1px solid var(--border-strong);
+            border-bottom: 1px solid var(--border-subtle);
+            padding: 0 2rem;
+            display: flex;
+            gap: 0;
+        }
+
+        .noc-tabs .nav-item {
+            flex: none;
+        }
+
+        .noc-tabs .nav-link {
+            border: none;
+            border-bottom: 2px solid transparent;
+            background: transparent;
+            color: var(--text-muted);
+            font-size: 0.82rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            text-transform: uppercase;
+            padding: 1rem 1.4rem;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .noc-tabs .nav-link i {
+            font-size: 0.75rem;
+        }
+
+        .noc-tabs .nav-link:hover {
+            color: var(--text-primary);
+            background: rgba(255,255,255,0.03);
+        }
+
+        .noc-tabs .nav-link.active {
+            color: var(--accent-cyan);
+            border-bottom-color: var(--accent-cyan);
+            background: rgba(0,212,255,0.04);
+        }
+
+        /* ── Tab Body ── */
+        .noc-body {
+            background: var(--bg-card);
+            border: 1px solid var(--border-strong);
+            border-top: none;
+            border-radius: 0 0 16px 16px;
+            padding: 2rem;
+        }
+
+        /* ── Form Card ── */
+        .form-panel {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 1.75rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .panel-heading {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-primary);
+            letter-spacing: 0.03em;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border-subtle);
+        }
+
+        .panel-heading .icon-badge {
+            width: 30px;
+            height: 30px;
+            border-radius: 8px;
+            background: rgba(0,212,255,0.1);
+            border: 1px solid rgba(0,212,255,0.2);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.78rem;
+            color: var(--accent-cyan);
+        }
+
+        /* ── Form Controls ── */
+        .form-label {
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: var(--text-secondary);
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            margin-bottom: 0.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .form-label i {
+            color: var(--accent-cyan);
+            font-size: 0.7rem;
+        }
+
+        .form-control,
+        .form-select {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-strong);
+            border-radius: 8px;
+            color: var(--text-primary);
+            padding: 0.65rem 1rem;
+            font-size: 0.875rem;
+            font-family: 'IBM Plex Sans', sans-serif;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        .form-control::placeholder { color: var(--text-muted); }
+        .form-select option { background: var(--bg-elevated); }
+
+        .form-control:focus,
+        .form-select:focus {
+            background: var(--bg-surface);
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 0 3px rgba(0,212,255,0.12);
+            color: var(--text-primary);
+            outline: none;
+        }
+
+        input[type="file"].form-control {
+            padding: 0.5rem 1rem;
+            cursor: pointer;
+        }
+        input[type="file"].form-control::-webkit-file-upload-button {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-strong);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            padding: 0.25rem 0.75rem;
+            font-size: 0.78rem;
+            cursor: pointer;
+            margin-right: 0.75rem;
+            transition: all 0.2s;
+        }
+        input[type="file"].form-control::-webkit-file-upload-button:hover {
+            background: var(--bg-elevated);
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+        }
+
+        .form-text {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 0.35rem;
+        }
+
+        /* Report drop zone with drag-drop support */
+        #report-drop-zone:hover,
+        #report-drop-zone.dragover {
+            border-color: var(--accent-cyan);
+            background: rgba(0, 212, 255, 0.06);
+            transform: translateY(-1px);
+        }
+        #report-drop-zone.dragover {
+            box-shadow: 0 0 0 3px rgba(0,212,255,0.15);
+        }
+
+        /* Pre-gen stats preview (styled after new Report Gen web kpis) */
+        #reportingKpiStrip > div {
+            background: var(--bg-surface);
+            border: 1px solid var(--border-subtle);
+            border-radius: 4px;
+            padding: 3px 4px;
+            text-align: center;
+            font-size: 0.68rem;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+        }
+        #reportingKpiStrip > div > div:first-child {
+            color: var(--text-muted);
+            font-size: 0.58rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        #reportingKpiStrip > div > div:last-child {
+            font-weight: 700;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            line-height: 1.1;
+        }
+
+        /* Theme toggle button */
+        .theme-toggle {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-strong);
+            color: var(--text-secondary);
+            width: 34px;
+            height: 34px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 0.95rem;
+        }
+        .theme-toggle:hover {
+            color: var(--accent-cyan);
+            border-color: var(--accent-cyan);
+            background: var(--bg-surface);
+        }
+        .theme-toggle:focus {
+            outline: none;
+            box-shadow: 0 0 0 3px rgba(0,212,255,0.2);
+        }
+
+        /* Radio & Checkbox */
+        .form-check { padding-left: 1.6rem; margin-bottom: 0.5rem; }
+        .form-check-input {
+            background-color: var(--bg-surface);
+            border: 1.5px solid var(--border-strong);
+            margin-top: 0.2rem;
+        }
+        .form-check-input:checked {
+            background-color: var(--accent-cyan);
+            border-color: var(--accent-cyan);
+        }
+        .form-check-input:focus { box-shadow: 0 0 0 3px rgba(0,212,255,0.15); }
+        .form-check-label {
+            font-size: 0.84rem;
+            color: var(--text-secondary);
+            cursor: pointer;
+        }
+
+        .option-group-label {
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-muted);
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            margin-bottom: 0.6rem;
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        /* ── Submit Button ── */
+        .btn-noc-primary {
+            background: linear-gradient(135deg, var(--accent-cyan) 0%, var(--accent-cyan-dim) 100%);
+            border: none;
+            border-radius: 8px;
+            color: #040d1a;
+            font-size: 0.82rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            padding: 0.65rem 1.75rem;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 12px rgba(0,212,255,0.2);
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .btn-noc-primary:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 6px 20px rgba(0,212,255,0.35);
+            color: #040d1a;
+        }
+
+        .btn-noc-primary:active { transform: translateY(0); }
+
+        .btn-noc-primary:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* ── Progress ── */
+        .progress-panel {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            padding: 1.25rem 1.5rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .progress-meta {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+        }
+
+        .progress-badge {
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            background: rgba(0,212,255,0.1);
+            border: 1px solid rgba(0,212,255,0.2);
+            color: var(--accent-cyan);
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .progress-text {
+            font-size: 0.78rem;
+            color: var(--text-muted);
+            font-family: 'IBM Plex Mono', monospace;
+        }
+
+        .progress {
+            height: 6px;
+            border-radius: 99px;
+            background: var(--bg-surface);
+            overflow: hidden;
+            margin-bottom: 1rem;
+        }
+
+        .progress-bar {
+            background: linear-gradient(90deg, var(--accent-cyan), var(--accent-green));
+            border-radius: 99px;
+            transition: width 0.5s ease;
+            position: relative;
+        }
+
+        .progress-bar::after {
+            content: '';
+            position: absolute;
+            right: 0;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #fff;
+            box-shadow: 0 0 6px var(--accent-cyan);
+        }
+
+        .progress-pct {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.75rem;
+            color: var(--accent-cyan);
+            text-align: right;
+            margin-top: -0.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        /* ── Log Panel ── */
+        .log-panel {
+            background: var(--bg-base);
+            border: 1px solid var(--border-subtle);
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .log-toolbar {
+            background: var(--bg-surface);
+            border-bottom: 1px solid var(--border-subtle);
+            padding: 0.65rem 1.25rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .log-toolbar-title {
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+            color: var(--text-muted);
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .log-toolbar-title i { color: var(--accent-cyan); }
+
+        .btn-log-clear {
+            background: transparent;
+            border: 1px solid var(--border-strong);
+            border-radius: 6px;
+            color: var(--text-muted);
+            font-size: 0.72rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            padding: 0.25rem 0.65rem;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+gap: 0.35rem;
+            cursor: pointer;
+        }
+
+        .btn-icon {
+            background: transparent;
+            border: 1px solid var(--border-strong);
+            border-radius: 6px;
+            color: var(--text-secondary);
+            padding: 0.35rem 0.6rem;
+            font-size: 0.8rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.25rem;
+        }
+
+        .btn-icon:hover {
+            background: var(--bg-elevated);
+            border-color: var(--accent-cyan);
+            color: var(--accent-cyan);
+        }
+
+        .btn-icon.btn-delete:hover {
+            border-color: var(--accent-red);
+            color: var(--accent-red);
+        }
+
+        .btn-log-clear:hover {
+            border-color: var(--accent-red);
+            color: var(--accent-red);
+        }
+
+        .log-content {
+            height: 320px;
+            overflow-y: auto;
+            padding: 1rem 1.25rem;
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.78rem;
+            line-height: 1.7;
+        }
+
+        .log-content::-webkit-scrollbar { width: 6px; }
+        .log-content::-webkit-scrollbar-track { background: transparent; }
+        .log-content::-webkit-scrollbar-thumb {
+            background: var(--border-strong);
+            border-radius: 99px;
+        }
+
+        .log-content p {
+            margin: 0;
+            padding: 0.15rem 0.5rem;
+            border-left: 2px solid transparent;
+            border-radius: 2px;
+            transition: background 0.15s;
+        }
+
+        .log-content p:hover {
+            background: rgba(255,255,255,0.03);
+            border-left-color: var(--accent-cyan);
+        }
+
+        /* ── Control Buttons ── */
+        .btn-ctrl {
+            font-size: 0.75rem;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+            border-radius: 7px;
+            padding: 0.4rem 0.9rem;
+            border: 1px solid transparent;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
+        .btn-ctrl-pause {
+            background: rgba(255,176,32,0.1);
+            border-color: rgba(255,176,32,0.3);
+            color: var(--accent-amber);
+        }
+        .btn-ctrl-pause:hover { background: rgba(255,176,32,0.18); color: var(--accent-amber); }
+
+        .btn-ctrl-resume {
+            background: rgba(0,229,160,0.1);
+            border-color: rgba(0,229,160,0.3);
+            color: var(--accent-green);
+        }
+        .btn-ctrl-resume:hover { background: rgba(0,229,160,0.18); color: var(--accent-green); }
+
+        .btn-ctrl-stop {
+            background: rgba(255,77,106,0.1);
+            border-color: rgba(255,77,106,0.3);
+            color: var(--accent-red);
+        }
+        .btn-ctrl-stop:hover { background: rgba(255,77,106,0.18); color: var(--accent-red); }
+
+        /* ── Download Area ── */
+        .download-area {
+            margin-top: 1.25rem;
+            padding: 1rem 1.25rem;
+            background: rgba(0,229,160,0.05);
+            border: 1px solid rgba(0,229,160,0.2);
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .btn-download {
+            background: linear-gradient(135deg, var(--accent-green), #00c48a);
+            border: none;
+            border-radius: 7px;
+            color: #050f0d;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            text-transform: uppercase;
+            padding: 0.5rem 1.25rem;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            text-decoration: none;
+        }
+
+        .btn-download:hover {
+            transform: translateY(-1px);
+            box-shadow: var(--glow-green);
+            color: #050f0d;
+        }
+
+        .download-filename {
+            font-family: 'IBM Plex Mono', monospace;
+            font-size: 0.8rem;
+            color: var(--accent-green);
+        }
+
+        /* ── Footer ── */
+        .noc-footer {
+            text-align: center;
+            margin-top: 1.5rem;
+            font-size: 0.72rem;
+            color: var(--text-muted);
+            letter-spacing: 0.05em;
+        }
+
+        /* ── Notifications ── */
+        .noc-toast {
+            position: fixed;
+            top: 1.5rem;
+            right: 1.5rem;
+            z-index: 9999;
+            min-width: 300px;
+            background: var(--bg-elevated);
+            border-radius: 10px;
+            border: 1px solid var(--border-strong);
+            padding: 0.9rem 1.25rem;
+            font-size: 0.84rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+        }
+
+        .noc-toast.type-success { border-left: 3px solid var(--accent-green); }
+        .noc-toast.type-error   { border-left: 3px solid var(--accent-red); }
+        .noc-toast.type-warning { border-left: 3px solid var(--accent-amber); }
+        .noc-toast.type-info    { border-left: 3px solid var(--accent-cyan); }
+        .noc-toast .toast-close { margin-left: auto; cursor: pointer; color: var(--text-muted); }
+
+        /* ── Spinner ── */
+        .spinner-border-sm { width: 0.9rem; height: 0.9rem; border-width: 0.15em; color: #040d1a; }
+
+        /* ── Responsive ── */
+        @media (max-width: 768px) {
+            .noc-header { flex-direction: column; gap: 1rem; text-align: center; padding: 1.5rem; }
+            .noc-tabs { overflow-x: auto; }
+            .noc-tabs .nav-link { padding: 0.75rem 1rem; font-size: 0.75rem; }
+            .noc-body { padding: 1.25rem; }
+        }
+    </style>
+</head>
+<body>
+<div class="app-wrapper">
+
+    <!-- Header -->
+    <div class="noc-header">
+        <div class="noc-header-left">
+            <div class="header-icon-wrap">
+                <i class="fas fa-network-wired"></i>
+            </div>
+            <div>
+                <h1 class="header-title">JTL NOC Monitoring</h1>
+                <p class="header-subtitle">GPON Network Operations Center &mdash; Automated Ticket Processing</p>
+            </div>
+        </div>
+        <div class="header-right">
+            <div class="header-status">
+                <div class="status-dot"></div>
+                SYSTEM ONLINE
+            </div>
+            <button id="themeToggle" class="theme-toggle" title="Toggle day/night theme" aria-label="Toggle theme">
+                <i class="fas fa-moon"></i>
+            </button>
+        </div>
+    </div>
+
+    <!-- Tabs -->
+    <ul class="noc-tabs nav nav-tabs" id="modeTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link active" id="los-tab" data-bs-toggle="tab" data-bs-target="#los" type="button" role="tab">
+                <i class="fas fa-signal"></i> LOS Validation
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="lowrx-tab" data-bs-toggle="tab" data-bs-target="#lowrx" type="button" role="tab">
+                <i class="fas fa-chart-line"></i> Low Rx Validation
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="double-tab" data-bs-toggle="tab" data-bs-target="#double" type="button" role="tab">
+                <i class="fas fa-copy"></i> Double Tickets
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="reporting-tab" data-bs-toggle="tab" data-bs-target="#reporting" type="button" role="tab">
+                <i class="fas fa-chart-pie"></i> Report Generation
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link" id="olt-tab" data-bs-toggle="tab" data-bs-target="#olt" type="button" role="tab">
+                <i class="fas fa-database"></i> OLT Inventory
+            </button>
+        </li>
+    </ul>
+
+    <!-- Tab Body -->
+    <div class="noc-body tab-content" id="modeTabContent">
+
+        <!-- ── LOS Tab ── -->
+        <div class="tab-pane fade show active" id="los" role="tabpanel">
+            <div class="form-panel">
+                <div class="panel-heading">
+                    <div class="icon-badge"><i class="fas fa-signal"></i></div>
+                    LOS Validation Configuration
+                </div>
+                <form id="losForm" enctype="multipart/form-data">
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label"><i class="fas fa-user"></i> Username</label>
+                            <input type="text" class="form-control" name="username" placeholder="Enter username" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label"><i class="fas fa-lock"></i> Password</label>
+                            <input type="password" class="form-control" name="password" placeholder="Enter password" required>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label"><i class="fas fa-file-excel"></i> Validation File (.xlsx)</label>
+                        <input type="file" class="form-control" name="file" accept=".xlsx,.xls" required>
+                        <div class="form-text">Upload Excel file containing LOS tickets</div>
+                    </div>
+                    <div class="mb-4">
+                        <div class="option-group-label"><i class="fas fa-sliders-h"></i> Processing Option</div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="los_processing_option" id="los_all" value="all" checked>
+                            <label class="form-check-label" for="los_all">Process All Tickets (Default)</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="los_processing_option" id="los_transition" value="transition_only">
+                            <label class="form-check-label" for="los_transition">Transitioning Tickets Only (Low Rx / Extreme Low Rx)</label>
+                        </div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="radio" name="los_processing_option" id="los_closing" value="los_only">
+                            <label class="form-check-label" for="los_closing">Closing Tickets Only (Optimal / LOS)</label>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-noc-primary" id="losSubmitBtn">
+                        <i class="fas fa-paper-plane"></i> Start Processing
+                    </button>
+                </form>
+            </div>
+
+            <div class="progress-panel" id="losProgressContainer" style="display: none;">
+                <div class="progress-meta">
+                    <span class="progress-badge"><i class="fas fa-spinner fa-spin"></i> Processing</span>
+                    <span class="progress-text" id="losProgressText">Initializing...</span>
+                </div>
+                <div class="progress"><div id="losProg" class="progress-bar" role="progressbar" style="width: 0%"></div></div>
+                <div class="d-flex gap-2 mt-2">
+                    <button type="button" class="btn-ctrl btn-ctrl-pause" id="losPauseBtn" onclick="pauseProcessing('los')" style="display:none;">
+                        <i class="fas fa-pause"></i> Pause
+                    </button>
+                    <button type="button" class="btn-ctrl btn-ctrl-resume" id="losResumeBtn" onclick="resumeProcessing('los')" style="display:none;">
+                        <i class="fas fa-play"></i> Resume
+                    </button>
+                    <button type="button" class="btn-ctrl btn-ctrl-stop" id="losStopBtn" onclick="stopProcessing('los')" style="display:none;">
+                        <i class="fas fa-stop"></i> Stop
+                    </button>
+                </div>
+            </div>
+
+            <div class="log-panel">
+                <div class="log-toolbar">
+                    <div class="log-toolbar-title"><i class="fas fa-terminal"></i> Process Logs</div>
+                    <button class="btn-log-clear" onclick="clearLog('los')"><i class="fas fa-trash"></i> Clear</button>
+                </div>
+                <div id="losLog" class="log-content"></div>
+            </div>
+
+            <!-- SSH Error Statistics Panel -->
+            <div id="losErrorPanel" class="form-panel" style="display: none;">
+                <div class="panel-heading">
+                    <div class="icon-badge"><i class="fas fa-exclamation-triangle"></i></div>
+                    SSH Error Statistics
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <div class="text-center p-3" style="background: rgba(255,77,106,0.1); border: 1px solid rgba(255,77,106,0.2); border-radius: 8px;">
+                            <div style="font-size: 2rem; font-weight: bold; color: var(--accent-red);" id="losTotalErrors">0</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Total Errors</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center p-3" style="background: rgba(255,176,32,0.1); border: 1px solid rgba(255,176,32,0.2); border-radius: 8px;">
+                            <div style="font-size: 2rem; font-weight: bold; color: var(--accent-amber);" id="losHighSeverity">0</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">High Severity</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center p-3" style="background: rgba(0,212,255,0.1); border: 1px solid rgba(0,212,255,0.2); border-radius: 8px;">
+                            <div style="font-size: 2rem; font-weight: bold; color: var(--accent-cyan);" id="losMediumSeverity">0</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Medium Severity</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center p-3" style="background: rgba(0,229,160,0.1); border: 1px solid rgba(0,229,160,0.2); border-radius: 8px;">
+                            <div style="font-size: 2rem; font-weight: bold; color: var(--accent-green);" id="losLowSeverity">0</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Low Severity</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-4">
+                    <h6 style="color: var(--text-primary); font-size: 0.9rem; margin-bottom: 1rem;">Error Types</h6>
+                    <div id="losErrorTypes" class="mb-3" style="max-height: 200px; overflow-y: auto;"></div>
+                </div>
+
+                <div class="mt-4">
+                    <h6 style="color: var(--text-primary); font-size: 0.9rem; margin-bottom: 1rem;">Recent Errors</h6>
+                    <div id="losRecentErrors" style="max-height: 300px; overflow-y: auto; font-size: 0.8rem;"></div>
+                </div>
+
+                <div class="mt-3 text-center">
+                    <button type="button" class="btn-noc-primary" onclick="exportSSHErrors('los')" id="losExportBtn" style="display: none;">
+                        <i class="fas fa-file-excel"></i> Export Errors to Excel
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Low Rx Tab ── -->
+        <div class="tab-pane fade" id="lowrx" role="tabpanel">
+            <div class="form-panel">
+                <div class="panel-heading">
+                    <div class="icon-badge"><i class="fas fa-chart-line"></i></div>
+                    Low Rx Validation Configuration
+                </div>
+                <form id="lowrxForm" enctype="multipart/form-data">
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label"><i class="fas fa-user"></i> Username</label>
+                            <input type="text" class="form-control" name="username" placeholder="Enter username" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label"><i class="fas fa-lock"></i> Password</label>
+                            <input type="password" class="form-control" name="password" placeholder="Enter password" required>
+                        </div>
+                    </div>
+                    <div class="mb-4">
+                        <label class="form-label"><i class="fas fa-file-excel"></i> Validation File (.xlsx)</label>
+                        <input type="file" class="form-control" name="file" accept=".xlsx,.xls" required>
+                        <div class="form-text">Upload Excel file containing Low Rx tickets</div>
+                    </div>
+                    <button type="submit" class="btn-noc-primary" id="lowrxSubmitBtn">
+                        <i class="fas fa-paper-plane"></i> Start Processing
+                    </button>
+                </form>
+            </div>
+
+            <div class="progress-panel" id="lowrxProgressContainer" style="display: none;">
+                <div class="progress-meta">
+                    <span class="progress-badge"><i class="fas fa-spinner fa-spin"></i> Processing</span>
+                    <span class="progress-text" id="lowrxProgressText">Initializing...</span>
+                </div>
+                <div class="progress"><div id="lowrxProg" class="progress-bar" role="progressbar" style="width: 0%"></div></div>
+                <div class="d-flex gap-2 mt-2">
+                    <button type="button" class="btn-ctrl btn-ctrl-pause" id="lowrxPauseBtn" onclick="pauseProcessing('lowrx')" style="display:none;">
+                        <i class="fas fa-pause"></i> Pause
+                    </button>
+                    <button type="button" class="btn-ctrl btn-ctrl-resume" id="lowrxResumeBtn" onclick="resumeProcessing('lowrx')" style="display:none;">
+                        <i class="fas fa-play"></i> Resume
+                    </button>
+                    <button type="button" class="btn-ctrl btn-ctrl-stop" id="lowrxStopBtn" onclick="stopProcessing('lowrx')" style="display:none;">
+                        <i class="fas fa-stop"></i> Stop
+                    </button>
+                </div>
+            </div>
+
+            <div class="log-panel">
+                <div class="log-toolbar">
+                    <div class="log-toolbar-title"><i class="fas fa-terminal"></i> Process Logs</div>
+                    <button class="btn-log-clear" onclick="clearLog('lowrx')"><i class="fas fa-trash"></i> Clear</button>
+                </div>
+                <div id="lowrxLog" class="log-content"></div>
+            </div>
+
+            <!-- SSH Error Statistics Panel -->
+            <div id="lowrxErrorPanel" class="form-panel" style="display: none;">
+                <div class="panel-heading">
+                    <div class="icon-badge"><i class="fas fa-exclamation-triangle"></i></div>
+                    SSH Error Statistics
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <div class="text-center p-3" style="background: rgba(255,77,106,0.1); border: 1px solid rgba(255,77,106,0.2); border-radius: 8px;">
+                            <div style="font-size: 2rem; font-weight: bold; color: var(--accent-red);" id="lowrxTotalErrors">0</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Total Errors</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center p-3" style="background: rgba(255,176,32,0.1); border: 1px solid rgba(255,176,32,0.2); border-radius: 8px;">
+                            <div style="font-size: 2rem; font-weight: bold; color: var(--accent-amber);" id="lowrxHighSeverity">0</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">High Severity</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center p-3" style="background: rgba(0,212,255,0.1); border: 1px solid rgba(0,212,255,0.2); border-radius: 8px;">
+                            <div style="font-size: 2rem; font-weight: bold; color: var(--accent-cyan);" id="lowrxMediumSeverity">0</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Medium Severity</div>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="text-center p-3" style="background: rgba(0,229,160,0.1); border: 1px solid rgba(0,229,160,0.2); border-radius: 8px;">
+                            <div style="font-size: 2rem; font-weight: bold; color: var(--accent-green);" id="lowrxLowSeverity">0</div>
+                            <div style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase;">Low Severity</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mt-4">
+                    <h6 style="color: var(--text-primary); font-size: 0.9rem; margin-bottom: 1rem;">Error Types</h6>
+                    <div id="lowrxErrorTypes" class="mb-3" style="max-height: 200px; overflow-y: auto;"></div>
+                </div>
+
+                <div class="mt-4">
+                    <h6 style="color: var(--text-primary); font-size: 0.9rem; margin-bottom: 1rem;">Recent Errors</h6>
+                    <div id="lowrxRecentErrors" style="max-height: 300px; overflow-y: auto; font-size: 0.8rem;"></div>
+                </div>
+
+                <div class="mt-3 text-center">
+                    <button type="button" class="btn-noc-primary" onclick="exportSSHErrors('lowrx')" id="lowrxExportBtn" style="display: none;">
+                        <i class="fas fa-file-excel"></i> Export Errors to Excel
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── Double Tickets Tab ── -->
+        <div class="tab-pane fade" id="double" role="tabpanel">
+            <div class="form-panel">
+                <div class="panel-heading">
+                    <div class="icon-badge"><i class="fas fa-copy"></i></div>
+                    Double Tickets Configuration
+                </div>
+                <form id="doubleForm" enctype="multipart/form-data">
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label"><i class="fas fa-user"></i> Username</label>
+                            <input type="text" class="form-control" name="username" placeholder="Enter username" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label"><i class="fas fa-lock"></i> Password</label>
+                            <input type="password" class="form-control" name="password" placeholder="Enter password" required>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label"><i class="fas fa-file-excel"></i> Double Tickets File (.xlsx)</label>
+                        <input type="file" class="form-control" name="file" accept=".xlsx,.xls" required>
+                        <div class="form-text">Upload Excel file containing duplicate tickets</div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="option-group-label"><i class="fas fa-sliders-h"></i> Options</div>
+                        <div class="form-check">
+                            <input class="form-check-input" type="checkbox" name="apply_rules" id="apply_rules" checked>
+                            <label class="form-check-label" for="apply_rules"><i class="fas fa-filter" style="color:var(--accent-cyan);font-size:0.7rem;margin-right:0.3rem;"></i> Apply filters &amp; rules</label>
+                        </div>
+                        <div class="form-check mt-1">
+                            <input class="form-check-input" type="checkbox" name="dry_run" id="dry_run">
+                            <label class="form-check-label" for="dry_run"><i class="fas fa-vial" style="color:var(--accent-amber);font-size:0.7rem;margin-right:0.3rem;"></i> Dry run (no CRM updates)</label>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn-noc-primary" id="doubleSubmitBtn">
+                        <i class="fas fa-paper-plane"></i> Start Processing
+                    </button>
+                </form>
+            </div>
+
+            <div class="progress-panel" id="doubleProgressContainer" style="display: none;">
+                <div class="progress-meta">
+                    <span class="progress-badge"><i class="fas fa-spinner fa-spin"></i> Processing</span>
+                    <span class="progress-text" id="doubleProgressText">Initializing...</span>
+                </div>
+                <div class="progress"><div id="doubleProg" class="progress-bar" role="progressbar" style="width: 0%"></div></div>
+            </div>
+
+            <div class="log-panel">
+                <div class="log-toolbar">
+                    <div class="log-toolbar-title"><i class="fas fa-terminal"></i> Process Logs</div>
+                    <button class="btn-log-clear" onclick="clearLog('double')"><i class="fas fa-trash"></i> Clear</button>
+                </div>
+                <div id="doubleLog" class="log-content"></div>
+            </div>
+        </div>
+
+        <!-- ── Reporting Tab ── -->
+        <div class="tab-pane fade" id="reporting" role="tabpanel">
+            <div class="form-panel">
+                <div class="panel-heading">
+                    <div class="icon-badge"><i class="fas fa-chart-pie"></i></div>
+                    Report Generation
+                </div>
+                <form id="reportingForm" enctype="multipart/form-data">
+                    <div class="mb-3">
+                        <label class="form-label"><i class="fas fa-file-alt"></i> Report Type</label>
+                        <select class="form-select" name="report_type" required>
+                            <option value="gpon">GPON</option>
+                            <option value="enterprise">Enterprise</option>
+                        </select>
+                    </div>
+                    <div class="mb-4">
+                        <label class="form-label"><i class="fas fa-file-excel"></i> Input File (.xlsx)</label>
+                        <div id="report-drop-zone" style="border:2px dashed var(--border-strong); border-radius:8px; padding:1rem; text-align:center; background:var(--bg-surface); cursor:pointer; transition:all .15s; min-height:70px; display:flex; align-items:center; justify-content:center; flex-direction:column;">
+                            <div>
+                                <i class="fas fa-cloud-upload-alt" style="font-size:1.4rem; color:var(--accent-cyan);"></i>
+                                <div style="font-size:0.85rem; font-weight:600; margin-top:0.25rem;">Drop Issue.xlsx here or click to select</div>
+                                <small style="color:var(--text-muted);">Supports .xlsx / .xls — max ~16MB</small>
+                            </div>
+                            <input type="file" class="form-control" name="file" accept=".xlsx,.xls" required style="display:none;" id="report-file-input">
+                        </div>
+                        <div id="report-file-info" style="display:none; margin-top:0.5rem; padding:0.4rem 0.6rem; background:rgba(46,125,50,0.1); border-left:3px solid #2E7D32; border-radius:4px; font-size:0.8rem;">
+                            <span id="report-file-name" style="font-weight:600;"></span>
+                            <span id="report-file-size" style="color:var(--text-muted); margin-left:0.5rem;"></span>
+                            <button type="button" onclick="clearReportFile()" style="float:right; background:none; border:none; color:#c62828; font-size:0.75rem; cursor:pointer;">✕ clear</button>
+                        </div>
+                    </div>
+                    <div>
+                        <button type="submit" class="btn-noc-primary" id="reportingSubmitBtn">
+                            <i class="fas fa-cogs"></i> Generate Report
+                        </button>
+                        <small style="margin-left:0.5rem; color:var(--text-muted); font-size:0.7rem;">Stats appear automatically when file is loaded</small>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Pre-generation stats area (auto populated via preview on file load) -->
+            <div id="reportingPreviewArea" style="display:none; margin-bottom:1rem; padding:0.6rem 0.75rem; background:var(--bg-elevated); border:1px solid var(--border-subtle); border-radius:8px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:0.35rem;">
+                     <span style="font-size:0.78rem; font-weight:600; color:var(--text-primary);">File Stats (auto on load)</span>
+                    <button type="button" onclick="$('#reportingPreviewArea').fadeOut(120);" style="font-size:0.7rem; line-height:1; background:none; border:none; color:var(--text-muted); cursor:pointer;">✕</button>
+                </div>
+                <div id="reportingKpiStrip" style="display:grid; grid-template-columns:repeat(auto-fit,minmax(78px,1fr)); gap:4px; margin-bottom:0.4rem;"></div>
+                <div id="reportingBucketList" style="font-size:0.72rem; color:var(--text-secondary); line-height:1.25;"></div>
+            </div>
+
+            <div class="progress-panel" id="reportingProgressContainer" style="display: none;">
+                <div class="progress-meta">
+                    <span class="progress-badge"><i class="fas fa-spinner fa-spin"></i> Generating</span>
+                    <span class="progress-text" id="reportingProgressText">Initializing...</span>
+                </div>
+                <div class="progress"><div id="reportingProg" class="progress-bar" role="progressbar" style="width: 0%"></div></div>
+            </div>
+
+            <div id="reportingDownloadArea" class="download-area" style="display: none;">
+                <a id="reportingDownloadLink" href="#" target="_blank" class="btn-download">
+                    <i class="fas fa-download"></i> Download Report
+                </a>
+                <span id="reportingDownloadName" class="download-filename"></span>
+            </div>
+        </div>
+
+        <!-- ── OLT Inventory Tab ── -->
+        <div class="tab-pane fade" id="olt" role="tabpanel">
+            <div class="form-panel">
+<div class="panel-heading">
+                     <div class="icon-badge"><i class="fas fa-database"></i></div>
+                     OLT Inventory Management <span id="oltCount" style="float: right; font-size: 0.75rem; color: var(--text-muted);">(0 entries)</span>
+                 </div>
+                <form id="oltForm">
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4">
+                            <label class="form-label"><i class="fas fa-network-wired"></i> NE Name</label>
+                            <input type="text" class="form-control" name="ne" placeholder="Enter NE name" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label"><i class="fas fa-tag"></i> OLT Type</label>
+                            <input type="text" class="form-control" name="type" placeholder="e.g. C620, C650" required>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label"><i class="fas fa-server"></i> Host / IP</label>
+                            <input type="text" class="form-control" name="host" placeholder="Enter OLT host or IP" required>
+                        </div>
+</div>
+                    <button type="submit" class="btn-noc-primary" id="oltSubmitBtn">
+                        <i class="fas fa-plus-circle"></i> Add OLT
+                    </button>
+                </form>
+            </div>
+
+            <div class="log-panel" style="margin-top: 2rem;">
+                <div class="log-header">
+                    <i class="fas fa-list"></i> Registered OLTs
+                </div>
+                <div id="oltTableContainer" style="padding: 1rem; max-height: 500px; overflow-y: auto;">
+                    <p style="color: var(--text-muted);">Loading OLT inventory...</p>
+                </div>
+            </div>
+
+            <div class="log-panel">
+                <div class="log-header">
+                    <i class="fas fa-terminal"></i> OLT Operation Log
+                    <button class="btn-icon" onclick="clearLog('olt')">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+                <div id="oltLog" class="log-content">
+                    <p style="color: var(--text-muted);">Ready to add OLT entries.</p>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- /noc-body -->
+
+    <!-- OLT Edit Modal -->
+    <div class="modal fade" id="oltEditModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content" style="background: var(--bg-elevated); border: 1px solid var(--border-strong); border-radius: 12px;">
+                <div class="modal-header" style="border-bottom: 1px solid var(--border-strong);">
+                    <h5 class="modal-title" style="color: var(--text-primary);"><i class="fas fa-edit"></i> Edit OLT Entry</h5>
+                    <button type="button" class="btn-icon" data-bs-dismiss="modal"><i class="fas fa-times"></i></button>
+                </div>
+                <div class="modal-body">
+                    <form id="oltEditForm">
+                        <input type="hidden" id="oltEditIndex">
+                        <div class="mb-3">
+                            <label class="form-label"><i class="fas fa-network-wired"></i> NE Name</label>
+                            <input type="text" class="form-control" id="oltEditNe" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><i class="fas fa-tag"></i> OLT Type</label>
+                            <input type="text" class="form-control" id="oltEditType" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label"><i class="fas fa-server"></i> Host / IP</label>
+                            <input type="text" class="form-control" id="oltEditHost" required>
+                        </div>
+                    </form>
+                </div>
+                <div class="modal-footer" style="border-top: 1px solid var(--border-strong);">
+                    <button type="button" class="btn-ctrl" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn-noc-primary" id="oltEditSaveBtn" onclick="saveOltEdit()"><i class="fas fa-save"></i> Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="noc-footer">&copy; Alex &amp; Mutua 2025 &nbsp;&bull;&nbsp; JTL Network Operations Center</div>
+
+</div><!-- /app-wrapper -->
+
+<script>
+    const socket = io({transports: ['polling']});
+    let currentSessionId = null;
+    let currentTab = 'los';
+
+    $('#modeTabs button').on('click', function() {
+        currentTab = $(this).attr('data-bs-target').replace('#', '');
+    });
+
+    function clearLog(mode) {
+        $(`#${mode}Log`).html('');
+    }
+
+    function exportSSHErrors(mode) {
+        $.ajax({
+            url: '/export_ssh_errors',
+            type: 'POST',
+            contentType: 'application/json',
+            data: JSON.stringify({session_id: currentSessionId}),
+            success: function(data) {
+                if (data.error) {
+                    showNotification('error', data.error);
+                } else {
+                    // Show download area similar to reports
+                    const downloadArea = $(`
+                        <div class="download-area mt-3" id="${mode}ErrorDownloadArea">
+                            <a href="${data.url}" target="_blank" class="btn-download">
+                                <i class="fas fa-download"></i> Download SSH Errors
+                            </a>
+                            <span class="download-filename">${data.filename}</span>
+                        </div>
+                    `);
+                    $(`#${mode}ErrorPanel`).append(downloadArea);
+                    showNotification('success', 'SSH error report exported successfully!');
+                }
+            },
+            error: function() {
+                showNotification('error', 'Failed to export SSH errors');
+            }
+        });
+    }
+
+    function updateSSHErrors(mode, errorStats) {
+        if (!errorStats || errorStats.total_errors === 0) {
+            $(`#${mode}ErrorPanel`).hide();
+            return;
+        }
+
+        $(`#${mode}ErrorPanel`).show();
+
+        // Update summary stats
+        $(`#${mode}TotalErrors`).text(errorStats.total_errors);
+        $(`#${mode}HighSeverity`).text(errorStats.errors_by_severity?.High || 0);
+        $(`#${mode}MediumSeverity`).text(errorStats.errors_by_severity?.Medium || 0);
+        $(`#${mode}LowSeverity`).text(errorStats.errors_by_severity?.Low || 0);
+
+        // Update error types
+        const errorTypesContainer = $(`#${mode}ErrorTypes`);
+        errorTypesContainer.empty();
+
+        if (errorStats.errors_by_type) {
+            Object.entries(errorStats.errors_by_type).forEach(([type, count]) => {
+                const severity = getErrorSeverity(type);
+                const color = getSeverityColor(severity);
+                errorTypesContainer.append(`
+                    <div class="d-flex justify-content-between align-items-center mb-2 p-2" style="background: rgba(255,255,255,0.03); border-radius: 4px;">
+                        <span style="color: var(--text-primary); font-size: 0.8rem;">${type}</span>
+                        <span class="badge" style="background: ${color}; color: #040d1a; font-size: 0.7rem;">${count}</span>
+                    </div>
+                `);
+            });
+        }
+
+        // Update recent errors
+        const recentErrorsContainer = $(`#${mode}RecentErrors`);
+        recentErrorsContainer.empty();
+
+        if (errorStats.recent_errors && errorStats.recent_errors.length > 0) {
+            errorStats.recent_errors.forEach(error => {
+                const timestamp = new Date(error.timestamp).toLocaleString();
+                const severity = error.severity || 'Medium';
+                const color = getSeverityColor(severity);
+                recentErrorsContainer.append(`
+                    <div class="mb-2 p-2" style="background: rgba(255,255,255,0.02); border-left: 3px solid ${color}; border-radius: 4px;">
+                        <div style="color: var(--text-secondary); font-size: 0.75rem; margin-bottom: 0.25rem;">
+                            <strong>${error.error_type}</strong> - ${timestamp}
+                        </div>
+                        <div style="color: var(--text-primary); font-size: 0.75rem; margin-bottom: 0.25rem;">
+                            Ticket: ${error.ticket || 'N/A'} | OLT: ${error.olt_name || 'Unknown'} | Host: ${error.host || 'N/A'}
+                        </div>
+                        <div style="color: var(--text-muted); font-size: 0.7rem;">
+                            ${error.probable_cause}
+                        </div>
+                    </div>
+                `);
+            });
+        }
+
+        // Show export button if there are errors
+        if (errorStats.total_errors > 0) {
+            $(`#${mode}ExportBtn`).show();
+        }
+    }
+
+    function getErrorSeverity(errorType) {
+        const highSeverityTypes = ['Connection Timeout', 'Authentication Failure', 'Host Unreachable'];
+        const mediumSeverityTypes = ['SSH Protocol Error', 'Command Execution Error'];
+        const lowSeverityTypes = ['Data Parsing Error'];
+
+        if (highSeverityTypes.includes(errorType)) return 'High';
+        if (mediumSeverityTypes.includes(errorType)) return 'Medium';
+        if (lowSeverityTypes.includes(errorType)) return 'Low';
+        return 'Medium';
+    }
+
+    function getSeverityColor(severity) {
+        switch (severity) {
+            case 'High': return 'var(--accent-red)';
+            case 'Medium': return 'var(--accent-amber)';
+            case 'Low': return 'var(--accent-green)';
+            default: return 'var(--accent-cyan)';
+        }
+    }
+
+$('#losForm').submit(function(e)       { e.preventDefault(); submitForm('losForm', 'los', '/upload'); });
+     $('#lowrxForm').submit(function(e)     { e.preventDefault(); submitForm('lowrxForm', 'lowrx', '/upload'); });
+     $('#doubleForm').submit(function(e)    { e.preventDefault(); submitForm('doubleForm', 'double', '/upload'); });
+     $('#reportingForm').submit(function(e) { e.preventDefault(); submitForm('reportingForm', 'reporting', '/report'); });
+
+     function submitForm(formId, mode, url) {
+        const formData = new FormData($(`#${formId}`)[0]);
+        if (formId !== 'reportingForm') formData.append('mode', mode);
+
+        const submitBtn = $(`#${mode}SubmitBtn`);
+        submitBtn.prop('disabled', true);
+        submitBtn.html('<span class="spinner-border spinner-border-sm me-2"></span>Processing...');
+        $(`#${mode}ProgressContainer`).fadeIn();
+
+        $.ajax({
+            url, type: 'POST', data: formData, processData: false, contentType: false,
+            success: function(data) {
+                if (data.error) { showNotification('error', data.error); resetForm(mode); return; }
+                currentSessionId = data.session_id;
+                socket.emit('join_room', {room: currentSessionId});
+                const ts = new Date().toLocaleTimeString();
+                $(`#${mode}Log`).html(`<p style="color:var(--accent-green)">[${ts}] ✓ Processing started...</p>`);
+                $(`#${mode}Prog`).css('width', '5%');
+                $(`#${mode}ProgressText`).text('Initializing...');
+                if (mode === 'los' || mode === 'lowrx') {
+                    $(`#${mode}PauseBtn`).show();
+                    $(`#${mode}StopBtn`).show();
+                }
+            },
+            error: function() {
+                showNotification('error', 'Request failed. Please check your connection and try again.');
+                resetForm(mode);
+            }
+        });
+    }
+
+    function resetForm(mode) {
+        const submitBtn = $(`#${mode}SubmitBtn`);
+        submitBtn.prop('disabled', false);
+        submitBtn.html(mode === 'reporting'
+            ? '<i class="fas fa-cogs"></i> Generate Report'
+            : '<i class="fas fa-paper-plane"></i> Start Processing');
+        $(`#${mode}ProgressContainer`).fadeOut();
+        $(`#${mode}ErrorPanel`).hide();
+        if (mode === 'los' || mode === 'lowrx') {
+            $(`#${mode}PauseBtn`).hide();
+            $(`#${mode}ResumeBtn`).hide();
+            $(`#${mode}StopBtn`).hide();
+        }
+        if (mode === 'reporting' && typeof window.clearReportFile === 'function') {
+            // clear custom drop-zone state
+            try { window.clearReportFile(); } catch(e){}
+        }
+    }
+
+    function pauseProcessing(mode) {
+        $.ajax({ url: '/pause', type: 'POST', contentType: 'application/json',
+            data: JSON.stringify({session_id: currentSessionId}),
+            success: function(data) {
+                if (data.status === 'success') {
+                    $(`#${mode}PauseBtn`).hide(); $(`#${mode}ResumeBtn`).show();
+                    showNotification('info', data.message);
+                }
+            }
+        });
+    }
+
+    function resumeProcessing(mode) {
+        $.ajax({ url: '/resume', type: 'POST', contentType: 'application/json',
+            data: JSON.stringify({session_id: currentSessionId}),
+            success: function(data) {
+                if (data.status === 'success') {
+                    $(`#${mode}ResumeBtn`).hide(); $(`#${mode}PauseBtn`).show();
+                    showNotification('success', data.message);
+                }
+            }
+        });
+    }
+
+    function stopProcessing(mode) {
+        if (confirm('Stop processing? The current ticket will complete first.')) {
+            $.ajax({ url: '/stop', type: 'POST', contentType: 'application/json',
+                data: JSON.stringify({session_id: currentSessionId}),
+                success: function(data) {
+                    if (data.status === 'success') {
+                        $(`#${mode}PauseBtn`).hide(); $(`#${mode}ResumeBtn`).hide(); $(`#${mode}StopBtn`).hide();
+                        showNotification('warning', data.message);
+                    }
+                }
+            });
+        }
+    }
+
+    function showNotification(type, message) {
+        const icons = { success: 'check-circle', error: 'exclamation-circle', warning: 'exclamation-triangle', info: 'info-circle' };
+        const colors = { success: 'var(--accent-green)', error: 'var(--accent-red)', warning: 'var(--accent-amber)', info: 'var(--accent-cyan)' };
+
+        const toast = $(`
+            <div class="noc-toast type-${type}">
+                <i class="fas fa-${icons[type]||'info-circle'}" style="color:${colors[type]}"></i>
+                <span style="color:var(--text-primary);font-size:0.82rem;">${message}</span>
+                <span class="toast-close"><i class="fas fa-times"></i></span>
+            </div>
+        `);
+
+        toast.find('.toast-close').on('click', () => toast.remove());
+        $('body').append(toast);
+        setTimeout(() => toast.fadeOut(300, () => toast.remove()), 5000);
+    }
+
+    socket.on('log_update', function(data) {
+        const ts = new Date().toLocaleTimeString();
+        let msg = data.message;
+        let color = 'var(--text-secondary)';
+        let icon = '<i class="fas fa-circle" style="font-size:0.5rem;opacity:0.5"></i>';
+
+        if (msg.toLowerCase().includes('error') || msg.toLowerCase().includes('failed')) {
+            color = 'var(--accent-red)'; icon = '<i class="fas fa-exclamation-triangle"></i>';
+        } else if (msg.toLowerCase().includes('success') || msg.toLowerCase().includes('complete') || msg.toLowerCase().includes('wrote cleaned report')) {
+            color = 'var(--accent-green)'; icon = '<i class="fas fa-check-circle"></i>';
+        } else if (msg.toLowerCase().includes('warning')) {
+            color = 'var(--accent-amber)'; icon = '<i class="fas fa-exclamation-circle"></i>';
+        }
+
+        const fileMatch = msg.match(/(uploads[\\/][^<>:"/\\|?*]+.xlsx)/);
+        if (fileMatch) {
+            const filepath = fileMatch[0].replace(/\\/g, '/');
+            const filename = filepath.split('/').pop();
+            const link = `<a href="/download/${filename}" target="_blank" style="color:var(--accent-cyan);text-decoration:underline;">${filename}</a>`;
+            msg = msg.replace(fileMatch[0], `ready for download: ${link}`);
+        }
+
+        const entry = `<p style="color:${color}">[${ts}] ${icon} ${msg}</p>`;
+        const logEl = $(`#${currentTab}Log`);
+        if (logEl.length && logEl[0]) {
+            logEl.append(entry).scrollTop(logEl[0].scrollHeight);
+        }
+    });
+
+    socket.on('progress_update', function(data) {
+        const pct = Math.round(data.percentage);
+        $(`#${currentTab}Prog`).css('width', `${pct}%`);
+        $(`#${currentTab}ProgressText`).text(data.message);
+        if (pct === 100) { showNotification('success', 'Processing completed successfully!'); resetForm(currentTab); }
+    });
+
+    socket.on('complete', function() { showNotification('success', 'Processing complete! Check logs for details.'); resetForm(currentTab); });
+
+    socket.on('processing_stopped', function(data) {
+        showNotification('warning', data.message);
+        resetForm(currentTab);
+        $(`#${currentTab}Form`)[0].reset();
+    });
+
+    socket.on('report_ready', function(data) {
+        try {
+            if (!data || !data.url) return;
+            $('#reportingDownloadLink').attr('href', data.url).attr('download', data.filename || 'report.xlsx');
+            $('#reportingDownloadName').text(data.filename || 'report.xlsx');
+            $('#reportingDownloadArea').fadeIn();
+            showNotification('success', 'Report is ready. Click Download to retrieve it.');
+        } catch(e) { console.error('report_ready error', e); }
+    });
+
+    // --- Drag & Drop + auto stats preview for reporting tab ---
+    function initReportDropZone() {
+        const zone = document.getElementById('report-drop-zone');
+        const input = document.getElementById('report-file-input');
+        const info = document.getElementById('report-file-info');
+        const nameEl = document.getElementById('report-file-name');
+        const sizeEl = document.getElementById('report-file-size');
+        if (!zone || !input) return;
+
+        // Click opens file dialog (also on the visual area)
+        zone.addEventListener('click', (e) => {
+            if (e.target.id !== 'report-file-input') input.click();
+        });
+
+        // When file chosen via dialog or dnd, update display + sync to form
+        function handleFile(file) {
+            if (!file) return;
+            // assign to the hidden input's files (via DataTransfer trick)
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            input.files = dt.files;
+
+            // show info bar
+            nameEl.textContent = file.name;
+            sizeEl.textContent = (file.size / 1024 / 1024).toFixed(1) + ' MB';
+            info.style.display = 'block';
+            zone.style.borderStyle = 'solid';
+            zone.style.borderColor = 'var(--accent-green, #2E7D32)';
+            // Auto stats preview on file load (live before generate)
+            setTimeout(() => { if (window.doReportPreview) window.doReportPreview(); }, 60);
+        }
+
+        input.addEventListener('change', () => {
+            if (input.files && input.files[0]) handleFile(input.files[0]);
+        });
+
+        // Drag events
+        ['dragenter', 'dragover'].forEach(evt => zone.addEventListener(evt, (e) => {
+            e.preventDefault(); e.stopPropagation();
+            zone.classList.add('dragover');
+        }));
+        ['dragleave', 'drop'].forEach(evt => zone.addEventListener(evt, (e) => {
+            e.preventDefault(); e.stopPropagation();
+            zone.classList.remove('dragover');
+        }));
+        zone.addEventListener('drop', (e) => {
+            const file = e.dataTransfer.files[0];
+            if (file && (file.name.endsWith('.xlsx') || file.name.endsWith('.xls'))) {
+                handleFile(file);
+            } else {
+                alert('Please drop a valid .xlsx or .xls file');
+            }
+        });
+
+        // expose clear globally (used by inline onclick)
+        window.clearReportFile = function() {
+            input.value = '';
+            info.style.display = 'none';
+            zone.style.borderStyle = 'dashed';
+            zone.style.borderColor = 'var(--border-strong)';
+            $('#reportingPreviewArea').hide();
+        };
+    }
+
+    // Preview stats rendering + fetch (auto on file load to show buckets/kpis before Generate)
+    function renderReportPreview(stats, rtype) {
+      const strip = $('#reportingKpiStrip');
+      const blist = $('#reportingBucketList');
+      strip.empty(); blist.empty();
+      if (!stats) return;
+
+      const isGpon = rtype === 'gpon';
+      const accent = isGpon ? '#4472C4' : '#7030A0';
+
+      // Color helpers (inspired by new Report Gen palette)
+      const getKpiColor = (lab) => {
+        const l = (lab || '').toLowerCase();
+        if (l.includes('gpon')) return '#4472C4';
+        if (l.includes('drop') || l.includes('closed')) return '#C62828';
+        if (l.includes('double') || l.includes('split')) return '#ED7D31';
+        if (l.includes('kept') || l.includes('non')) return '#2E7D32';
+        if (l.includes('cesr')) return '#808080';
+        if (l.includes('total')) return '#00d4ff';
+        return accent;
+      };
+      const getBucketColor = (name) => {
+        const n = (name || '').toLowerCase();
+        if (n.includes('power')) return '#C00000';
+        if (n.includes('equip')) return '#7030A0';
+        if (n.includes('bb') || n.includes('los')) return '#4472C4';
+        if (n.includes('ran') || n.includes('extreme')) return '#ED7D31';
+        if (n.includes('ring')) return '#70AD47';
+        if (n.includes('cesr')) return '#808080';
+        if (n.includes('gpon')) return '#4472C4';
+        if (n.includes('low')) return '#5B9BD5';
+        return '#6A7282';
+      };
+
+      const kpis = [];
+      if (isGpon) {
+        kpis.push(['Total rows', stats.total_rows || 0]);
+        kpis.push(['Dropped (closed)', stats.dropped_closed || 0]);
+        kpis.push(['GPON rows', stats.gpon_rows || 0]);
+        kpis.push(['Non-GPON', stats.non_gpon_rows || 0]);
+        kpis.push(['Doubles', stats.double_tickets || 0]);
+        kpis.push(['Splitters', stats.splitter_rows || 0]);
+      } else {
+        kpis.push(['Total rows', stats.total_rows || 0]);
+        kpis.push(['Dropped (closed)', stats.dropped_closed || 0]);
+        kpis.push(['Kept', stats.kept_rows || 0]);
+        kpis.push(['CESR', stats.cesr_count || 0]);
+      }
+
+      kpis.forEach(([lab, val]) => {
+        const c = getKpiColor(lab);
+        const card = $(`<div style="border-left:3px solid ${c}; padding-left:4px;"><div>${lab}</div><div style="font-weight:700;">${val}</div></div>`);
+        strip.append(card);
+      });
+
+      const buckets = stats.bucket_counts || stats.category_counts || {};
+      if (Object.keys(buckets).length) {
+        blist.append($('<div style="font-size:0.65rem; font-weight:600; margin:2px 0 4px; color:var(--text-secondary);">Buckets / Categories</div>'));
+        Object.entries(buckets).forEach(([k, v]) => {
+          const bc = getBucketColor(k);
+          const row = $(`<div style="display:flex; align-items:center; gap:6px; font-size:0.7rem; padding:2px 0; border-bottom:1px dotted var(--border-subtle);">
+            <span style="width:11px; height:11px; border-radius:2px; background:${bc}; flex-shrink:0;"></span>
+            <span style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${k}</span>
+            <span style="font-weight:700; color:var(--text-primary);">${v}</span>
+          </div>`);
+          blist.append(row);
+        });
+      }
+
+      $('#reportingPreviewArea').css('border-color', accent).fadeIn(120);
+    }
+
+    function doReportPreview() {
+      const fd = new FormData($('#reportingForm')[0]);
+      if (!fd.get('file') || !fd.get('file').name) {
+        alert('Select a file first');
+        return;
+      }
+      $.ajax({
+        url: '/report_preview', type: 'POST', data: fd, processData: false, contentType: false,
+        success: function(res) {
+          if (res.error) { alert('Preview error: ' + res.error); return; }
+          const rt = res.stats && res.stats.report_type ? res.stats.report_type : $('#reportingForm [name=report_type]').val();
+          renderReportPreview(res.stats, rt);
+        },
+        error: function() { alert('Preview request failed'); }
+      });
+    }
+
+    window.doReportPreview = doReportPreview;
+
+    // Re-run preview automatically when report type changes (if file already selected) for accurate autorun stats
+    $(document).on('change', '#reportingForm select[name="report_type"]', function() {
+        const form = $('#reportingForm')[0];
+        const hasFile = form && form.elements['file'] && form.elements['file'].files && form.elements['file'].files.length > 0;
+        if (hasFile && window.doReportPreview) {
+            window.doReportPreview();
+        } else {
+            $('#reportingPreviewArea').hide();
+        }
+    });
+
+    /* Day/Night theme toggle */
+    function initTheme() {
+        const saved = localStorage.getItem('theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', saved);
+        updateThemeIcon(saved);
+    }
+    function toggleTheme() {
+        const current = document.documentElement.getAttribute('data-theme') || 'dark';
+        const next = current === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        localStorage.setItem('theme', next);
+        updateThemeIcon(next);
+    }
+    function updateThemeIcon(theme) {
+        const btn = document.getElementById('themeToggle');
+        if (!btn) return;
+        const icon = btn.querySelector('i');
+        if (theme === 'light') {
+            icon.className = 'fas fa-sun';
+        } else {
+            icon.className = 'fas fa-moon';
+        }
+    }
+
+    socket.on('ssh_error_update', function(errorStats) {
+        updateSSHErrors(currentTab, errorStats);
+    });
+
+    // OLT Inventory Functions
+    function refreshOltList() {
+        $.ajax({
+            url: '/olt/list',
+            type: 'GET',
+            success: function(data) {
+                let html = '';
+                if (!data.olts || data.olts.length === 0) {
+                    html = '<p style="color: var(--text-muted); text-align: center;">No OLTs registered yet.</p>';
+                } else {
+                    html = '<table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">';
+                    html += '<thead style="background: var(--bg-elevated); border-bottom: 1px solid var(--border-strong);">';
+                    html += '<tr style="color: var(--accent-cyan);">';
+                    html += '<th style="padding: 0.5rem; text-align: left;">NE</th>';
+                    html += '<th style="padding: 0.5rem; text-align: left;">Type</th>';
+                    html += '<th style="padding: 0.5rem; text-align: left;">Host / IP</th>';
+                    html += '<th style="padding: 0.5rem; text-align: center;">Actions</th>';
+                    html += '</tr></thead>';
+                    html += '<tbody>';
+                    data.olts.forEach((olt, idx) => {
+                        html += '<tr style="border-bottom: 1px solid var(--border-subtle);" onmouseover="this.style.background=\'var(--bg-elevated)\'" onmouseout="this.style.background=\'\'">';
+                        html += `<td style="padding: 0.5rem;">${olt.ne}</td>`;
+                        html += `<td style="padding: 0.5rem;">${olt.type}</td>`;
+                        html += `<td style="padding: 0.5rem;">${olt.host}</td>`;
+                        html += '<td style="padding: 0.5rem; text-align: center;">';
+                        html += `<button type="button" class="btn-icon" onclick="editOlt(${olt.index})" style="margin-right: 0.25rem;"><i class="fas fa-edit"></i></button>`;
+                        html += `<button type="button" class="btn-icon btn-delete" onclick="deleteOlt(${olt.index})"><i class="fas fa-trash"></i></button>`;
+                        html += '</td></tr>';
+                    });
+                    html += '</tbody></table>';
+                }
+                $('#oltTableContainer').html(html);
+            },
+            error: function() {
+                $('#oltTableContainer').html('<p style="color: var(--accent-red);">Failed to load OLT list.</p>');
+            }
+        });
+    }
+
+    function refreshOltCount() {
+        $.ajax({
+            url: '/olt/count',
+            type: 'GET',
+            success: function(data) {
+                $('#oltCount').text(`(${data.count || 0} entries)`);
+                refreshOltList();
+            }
+        });
+    }
+
+    $('#oltForm').on('submit', function(e) {
+        e.preventDefault();
+        const formData = new FormData(this);
+        $('#oltSubmitBtn').prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Adding...');
+        
+        $.ajax({
+            url: '/olt/add',
+            type: 'POST',
+            data: formData,
+            processData: false,
+            contentType: false,
+            success: function(data) {
+                if (data.status === 'success') {
+                    $('#oltForm')[0].reset();
+                    refreshOltCount();
+                    appendLog('olt', `✓ Successfully added OLT: ${data.ne}`);
+                } else {
+                    appendLog('olt', `✗ Error: ${data.message}`);
+                }
+                $('#oltSubmitBtn').prop('disabled', false).html('<i class="fas fa-plus-circle"></i> Add OLT');
+            },
+            error: function(xhr, status, error) {
+                appendLog('olt', `✗ Request failed: ${error}`);
+                $('#oltSubmitBtn').prop('disabled', false).html('<i class="fas fa-plus-circle"></i> Add OLT');
+            }
+        });
+    });
+
+    function editOlt(index) {
+        $.ajax({
+            url: '/olt/list',
+            type: 'GET',
+            success: function(data) {
+                const olt = data.olts.find(o => o.index === index);
+                if (olt) {
+                    $('#oltEditIndex').val(index);
+                    $('#oltEditNe').val(olt.ne);
+                    $('#oltEditType').val(olt.type);
+                    $('#oltEditHost').val(olt.host);
+                    const modal = new bootstrap.Modal(document.getElementById('oltEditModal'));
+                    modal.show();
+                }
+            },
+            error: function() {
+                appendLog('olt', '✗ Failed to load OLT data');
+            }
+        });
+    }
+
+    function saveOltEdit() {
+        const index = $('#oltEditIndex').val();
+        const newNe = $('#oltEditNe').val().trim();
+        const newType = $('#oltEditType').val().trim();
+        const newHost = $('#oltEditHost').val().trim();
+
+        if (!newNe || !newType || !newHost) {
+            appendLog('olt', '✗ All fields are required');
+            return;
+        }
+
+        const saveBtn = $('#oltEditSaveBtn');
+        saveBtn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Saving...');
+
+        $.ajax({
+            url: `/olt/update/${index}`,
+            type: 'POST',
+            data: {ne: newNe, type: newType, host: newHost},
+            success: function(response) {
+                if (response.status === 'success') {
+                    refreshOltCount();
+                    appendLog('olt', `✓ Updated OLT: ${newNe}`);
+                    const modal = bootstrap.Modal.getInstance(document.getElementById('oltEditModal'));
+                    modal.hide();
+                } else {
+                    appendLog('olt', `✗ Error: ${response.message}`);
+                }
+                saveBtn.prop('disabled', false).html('<i class="fas fa-save"></i> Save Changes');
+            },
+            error: function(xhr, status, error) {
+                appendLog('olt', `✗ Request failed: ${error}`);
+                saveBtn.prop('disabled', false).html('<i class="fas fa-save"></i> Save Changes');
+            }
+        });
+    }
+
+    function deleteOlt(index) {
+        if (confirm('Are you sure you want to delete this OLT entry?')) {
+            $.ajax({
+                url: `/olt/delete/${index}`,
+                type: 'POST',
+                success: function(response) {
+                    if (response.status === 'success') {
+                        refreshOltCount();
+                        appendLog('olt', `✓ Deleted OLT entry`);
+                    } else {
+                        appendLog('olt', `✗ Error: ${response.message}`);
+                    }
+                },
+                error: function(xhr, status, error) {
+                    appendLog('olt', `✗ Request failed: ${error}`);
+                }
+            });
+        }
+    }
+
+    function appendLog(mode, msg) {
+        const ts = new Date().toLocaleTimeString();
+        let color = 'var(--text-secondary)';
+        let icon = '<i class="fas fa-circle" style="font-size:0.5rem;opacity:0.5"></i>';
+
+        if (msg.startsWith('✗') || msg.toLowerCase().includes('error') || msg.toLowerCase().includes('failed')) {
+            color = 'var(--accent-red)';
+            icon = '<i class="fas fa-exclamation-triangle"></i>';
+        } else if (msg.startsWith('✓') || msg.toLowerCase().includes('success')) {
+            color = 'var(--accent-green)';
+            icon = '<i class="fas fa-check-circle"></i>';
+        }
+
+        const entry = `<p style="color:${color}; margin: 0.25rem 0;"><span style="font-size:0.65rem;">[${ts}]</span> ${icon} ${msg}</p>`;
+        const logDiv = $(`#${mode}Log`);
+        logDiv.append(entry);
+        logDiv.scrollTop(logDiv[0].scrollHeight);
+    }
+
+    // Auto-refresh OLT list when data changes from another session
+    socket.on('olt_data_changed', function(data) {
+        if (data && data.action) {
+            refreshOltCount();
+        }
+    });
+
+    $(document).ready(function() {
+        const welcome = '<p style="color:var(--text-muted)"><i class="fas fa-circle-dot" style="color:var(--accent-cyan);font-size:0.6rem;"></i> Ready to process tickets &mdash; upload a file to begin.</p>';
+        $('.log-content').html(welcome);
+        initReportDropZone();  // activate drag-drop + auto-preview for reporting tab
+        initTheme();
+        $('#themeToggle').on('click', toggleTheme);
+        refreshOltCount();  // Load OLT count and list on page load
+    });
+</script>
+</body>
+</html>

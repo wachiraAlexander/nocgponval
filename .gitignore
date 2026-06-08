@@ -4,9 +4,7 @@ __pycache__/
 *.pyo
 
 # Excel uploads (large data files)
-uploads/*.xlsx
-
-# Log files
+uploads/
 *.log
 
 # Backup files

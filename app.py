@@ -31,9 +31,12 @@ import shutil
 import tempfile
 from datetime import datetime
 
-# Add reportgen to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'Report Gen'))
-import app as reportgen_module
+import importlib.util
+
+REPORTGEN_PATH = os.path.join(os.path.dirname(__file__), 'Report Gen', 'app.py')
+spec = importlib.util.spec_from_file_location("reportgen_module", REPORTGEN_PATH)
+reportgen_module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(reportgen_module)
 generate_report = reportgen_module
 enterprise_report = reportgen_module
 
